@@ -1,0 +1,155 @@
+/*
+
+Arafat Rahaman
+producer-consumer
+DOCUMENTATION
+
+*/
+
+[GitHub]
+    github: https://github.com/CIS-3207-S23/project-3-s23-arafatrahaman1
+
+[HOW_IT_WORKS]
+    How we doin today?! It is currently 12:41am. About 8 hours before this is due and your boy has finished this lab. Strap in for the most beautiful
+    rendition of the classic producer-consumer project.
+
+    From 12,000 Feet Lense:
+        In this program you have 5 total threads. A main-producer+distributor thread, and 4 consumer threads. 2 Consumer threads consume product type-1 and the other 2 consumer
+        product type-2. 
+    
+    Main/Producer/Distributor Thead
+        The producer thread is responsible for the producing 150 products of each type, and at the end send a kill switch to notify the consumer threads to stop 
+        consuming. It uses a struct called ProducerItem, and this struct carries the product-type and number. After the production of each item it sleeps randomly from 0.01 to
+        0.20 seconds. After the production of all the items of each type (300 total) it will create one more which will be the kill switch. The product number will be -1. 
+        The main() will create two child process that will call the producer function. Through out this entire thing a pipe will be used to direct the products to the parent 
+        process. At the end of the pipe waits the distributor. Code:
+
+                    void producer(int type, int fd) {
+                        ProducerItem item; 
+                        for (int i = 0; i < TOTAL_PRODUCTS; i++) {
+                            item.productType = type;
+                            item.count = i;
+                            write(fd, &item, sizeof(ProducerItem));
+                            sleep_rand();
+                        }   
+
+                        item.productType = type;
+                        item.count = -1;
+                        write(fd, &item, sizeof(ProducerItem));
+                    }
+
+        The distributor is responisible for placing the products in their respective buffers where consumer treads will go to consume the products. To do this, for each respective
+        product types, the distriburor will lock the buffer, check if the buffer is NOT FULL (or empty), if it is then it waits with condition variable. Once there is space it 
+        will place the item in the buffer, signal that the buffer has been filled, and unlock the buffer. Code:
+                        
+                        ProducerItem item;
+                        int ks1 = 0;
+                        int ks2 = 0;
+                        // int i = 0;
+                        while(ks1 == 0 || ks2 == 0 ) {
+                            
+                            read(fd[0], &item, sizeof(ProducerItem));
+                            
+                            if (item.productType == 1 && item.count == -1) {
+                                ks1 = 1;
+                            }
+
+                            if (item.productType == 2 && item.count == -1) {
+                                ks2 = 1;
+                            }
+
+                            // printf("productType = [%d] and count = [%d]\n", item.productType, item.count); 
+                            
+                            // distributor code;
+                            if (item.productType == 1) {
+                                pthread_mutex_lock(&buffer1_mutex);                                         // lock buffer 1
+                                while(buffer1_count == PRODUCT_1_BUFFER_SIZE) {                             // check if buffer if full
+                                    pthread_cond_wait(&buffer1_empty, &buffer1_mutex);                      // if so, WAIT till empty signal
+                                }
+                                buffer1[buffer1_fill_ptr] = item;                                     // place item at the index of fill_ptr
+                                buffer1_fill_ptr = (buffer1_fill_ptr + 1) % PRODUCT_1_BUFFER_SIZE;          // move the fill_ptr
+                                buffer1_count++;                                                            // increment count
+                                pthread_cond_signal(&buffer1_fill);                                         // signal a fill
+                                pthread_mutex_unlock(&buffer1_mutex);                                       // unlock critical section
+                            }
+
+                            if (item.productType == 2) {
+                                pthread_mutex_lock(&buffer2_mutex);                                         // lock buffer 2
+                                while(buffer2_count == PRODUCT_2_BUFFER_SIZE) {                             // check if buffer if full
+                                    pthread_cond_wait(&buffer2_empty, &buffer2_mutex);                      // if so, WAIT until empty signal
+                                }
+                                buffer2[buffer2_fill_ptr] = item;                                     // place item at the index of fill_ptr
+                                buffer2_fill_ptr = (buffer2_fill_ptr + 1) % PRODUCT_2_BUFFER_SIZE;          // move the fill_ptr
+                                buffer2_count++;                                                            // increment count
+                                pthread_cond_signal(&buffer2_fill);                                         // signal a fill
+                                pthread_mutex_unlock(&buffer2_mutex);                                       // unclock critical section
+                            }
+                        }
+    
+    4 Consumer Threads (2 Type-1-Consuming Threads, 2 Type-2-Consuming Threads)
+        The consumer threads uses the consumer[no.] functions. The function runs indefineitly for respective products. Two threads are using each function and does the following.
+        It locks the buffer, if the buffer is empty it waits for the signal that there has been a fill for the respective buffer. Once there is a product they wake up and consume
+        that product. And keep consuming as long as they can keep gaining access to the buffer and there is stuff to consume. The complicated part is the killSwitch. So two threads
+        use one consumer function. What happens when the killSwitch is passed and 1 of the 2 consumer gains access to it first? Well the other one is left sleeping. To fix this,
+        What we do is simply put an if-statement in the while-loop conddition for if there is a product in the buffer. When one of the threads gains the kill switch it, returns NULL,
+        wakes up the other thread using the same function with and unlock to the buffer, and a signal that there has been a fill (there hasn't been a fill but is needed to wake
+        and stop having the other thread sleeping). How the consumption works is it uses a indexing-pointer-number to keep track of what to eat next. When it is consumed the log
+        function is called to have the information about the consumption be printed to an out.txt file. It prints product type, product number, the consumer thread id, and the 
+        consumer count for that respective product.
+    
+    Does it have a ton of global variables yes, but it was not because of laziness, but because it made the most sense. Let me explain.
+        Passing in structs that have all the required information makes sense but that would require creating and re-initallization of each variable needed in the consumer for
+        each respective products. Also, there are thread functions that are global and are being used by threads, why over complicate the code. The buffer is something that
+        is syncronized so it feels fine having it global. With all that being said I also get the other argument of passing in structs to functions just for cleaner code, but 
+        I sorta didn't have time to really implement the structs. I was more focused on the right placements of structs and such.
+    
+    makefile
+        makefile was used in this lab, but really it's to compile and run the main.c which run the producer and consumer problem.
+
+    basic_mutex.c, plan.call
+        can be ignored in submission as it was used in the beggining to draw out the scheme of this program
+
+[HOW_TO_COMPILE_AND_RUN]
+    compile: make main
+    run: main
+
+[FUNCTIONS]
+    void sleep_rand() - used to put the producer to sleep at random times.
+    void logItem(const char *logInfo) - used to log info to out.txt file
+    void producer(int type, int fd) - used to create products, and send through a pipe
+    void *consumer1(void *arg) - consume product1
+    void *consumer2(void *arg) - consume product2
+
+[LOCKS_AND_CONDITIONS]
+    Locks
+        pthread_mutex_t buffer1_mutex; - used to lock buffer1 up so that producer, and consumer 1 and consumer 2 don't all have access to it at the same time
+        pthread_mutex_t buffer2_mutex; - used to lock buffer2 up so that producer, and consumer 1 and consumer 2 don't all have access to it at the same time
+
+    Conditions
+        pthread_cond_t buffer1_empty; - need an empty wait/signal so distribors and consumers know when to wait and go
+        pthread_cond_t buffer1_fill; - need a fill ait/signal so distribors and consumers know when to wait and go
+        pthread_cond_t buffer2_empty; - need an empty wait/signal so distribors and consumers know when to wait and go
+        pthread_cond_t buffer2_fill;  - need a fill ait/signal so distribors and consumers know when to wait and go
+
+[MISCELANEOUS]
+    int fdOut - used to point to the out file.
+    int fd[2] - pipe
+    ks1 & ks2 - used in distributor to know when to stop reading from pipe.
+    cks1 & cks2 - used to let other thread (the one that did not get the killSwitch) to stop.
+
+[TESTING]
+    - Testing was done as the code was being built. Before the implementation of the outfile, everything was getting printed to the terminal.
+    - A way to check is also just to compare the product number to the consumer count, if they match in the logs then everything synced up
+    - Tried different numbers for buffer size, producer size, etc.
+    - Made sure there were 4 unique threadIDs, and 2 thread IDs only consumed product 1, and the other two consumed product 2
+    - Kept printing everything to the teriminal in the final implementation.
+    - Used print statements to keep track of where the kill switch product was at all times
+
+[FINAL_NOTES]
+    Most of the hard part was just the begginning. Figuring out where to use what. Mostly figuring out what locks and conditions to use and where. Had an issue where my program
+    refused to end because it was forever waiting for threads that were sleeping because it didn't know that the KillSwich was recieved by the other thread. Ryan helped me fix
+    it.
+
+[REFERENCES]
+    Chapter 30 OSTEP (GOAT Textbook)
+    Ryan-TA (GOAT TA) - helped with a bug
